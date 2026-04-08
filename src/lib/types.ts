@@ -1,7 +1,10 @@
 export interface AllocationRow {
   storeNumber: string;
   storeName: string;
+  /** Style Description — human-readable, used for display and AI matching */
   style: string;
+  /** Style Number — the code (e.g. B0U014CRPC), used as grouping key */
+  styleNumber: string;
   sku: string;
   eopTotalUnitsInbound: number;
   netSalesUnits: number;
