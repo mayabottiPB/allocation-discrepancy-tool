@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, X, Check } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, X, Check, Search } from "lucide-react";
+import { useState, useMemo } from "react";
 import type { ExtractedMention } from "@/lib/types";
 
 interface ValidationModalProps {
@@ -10,115 +10,205 @@ interface ValidationModalProps {
   onSkip: () => void;
 }
 
-export function ValidationModal({
-  mention,
-  onConfirm,
-  onSkip,
-}: ValidationModalProps) {
-  const [selectedStore, setSelectedStore] = useState<string>(
-    mention.matchedStoreNumber ?? ""
+export function ValidationModal({ mention, onConfirm, onSkip }: ValidationModalProps) {
+  const [storeSearch, setStoreSearch] = useState(mention.rawStoreRef ?? "");
+  const [styleSearch, setStyleSearch] = useState(mention.rawProductRef ?? "");
+  const [selectedStore, setSelectedStore] = useState<{ storeNumber: string; storeName: string } | null>(
+    mention.matchedStoreNumber
+      ? { storeNumber: mention.matchedStoreNumber, storeName: mention.matchedStoreName ?? mention.matchedStoreNumber }
+      : null
   );
-  const [selectedStyle, setSelectedStyle] = useState<string>(
-    mention.matchedStyle ?? ""
-  );
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(mention.matchedStyle ?? null);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
 
-  const canConfirm = selectedStore !== "" && selectedStyle !== "";
+  const filteredStores = useMemo(() => {
+    const q = storeSearch.toLowerCase();
+    return mention.candidateStores.filter(
+      (s) =>
+        s.storeNumber.toLowerCase().includes(q) ||
+        s.storeName.toLowerCase().includes(q)
+    );
+  }, [storeSearch, mention.candidateStores]);
+
+  const filteredStyles = useMemo(() => {
+    const q = styleSearch.toLowerCase();
+    return mention.candidateStyles.filter((s) =>
+      s.toLowerCase().includes(q)
+    );
+  }, [styleSearch, mention.candidateStyles]);
+
+  const canConfirm = selectedStore !== null && selectedStyle !== null;
 
   const handleConfirm = () => {
-    const storeName =
-      mention.candidateStores.find((s) => s.storeNumber === selectedStore)
-        ?.storeName ?? selectedStore;
-    onConfirm(selectedStore, storeName, selectedStyle);
+    if (!selectedStore || !selectedStyle) return;
+    onConfirm(selectedStore.storeNumber, selectedStore.storeName, selectedStyle);
   };
 
+  /** Extract just the style description from "StyleNumber | StyleDescription" */
+  function styleLabel(s: string) {
+    return s.includes(" | ") ? s.split(" | ").slice(1).join(" | ") : s;
+  }
+  function styleCode(s: string) {
+    return s.includes(" | ") ? s.split(" | ")[0] : null;
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-start gap-3 border-b border-slate-100 px-6 py-5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100">
             <AlertTriangle className="h-5 w-5 text-amber-600" />
           </div>
           <div className="flex-1">
-            <h2 className="text-base font-semibold text-slate-900">
-              Clarification Needed
-            </h2>
+            <h2 className="text-base font-semibold text-slate-900">Clarification Needed</h2>
             <p className="mt-0.5 text-sm text-slate-500">
-              The AI confidence is below 95% — please confirm the correct match.
+              AI confidence is below 95% — please confirm the correct match.
             </p>
           </div>
-          <button
-            onClick={onSkip}
-            className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100"
-          >
+          <button onClick={onSkip} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
-          {/* Raw references */}
-          <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
+        <div className="space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto">
+          {/* What the user said */}
+          <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm space-y-1">
             <div className="flex gap-2">
-              <span className="shrink-0 font-medium text-slate-500">Store ref:</span>
+              <span className="shrink-0 font-medium text-slate-500 w-24">Store ref:</span>
               <span className="text-slate-800">"{mention.rawStoreRef}"</span>
             </div>
-            <div className="mt-1 flex gap-2">
-              <span className="shrink-0 font-medium text-slate-500">Product ref:</span>
+            <div className="flex gap-2">
+              <span className="shrink-0 font-medium text-slate-500 w-24">Product ref:</span>
               <span className="text-slate-800">"{mention.rawProductRef}"</span>
             </div>
-            <div className="mt-1 flex gap-2">
-              <span className="shrink-0 font-medium text-slate-500">Confidence:</span>
-              <span
-                className={`font-semibold ${
-                  mention.confidence >= 0.85
-                    ? "text-amber-600"
-                    : "text-red-600"
-                }`}
-              >
+            <div className="flex gap-2">
+              <span className="shrink-0 font-medium text-slate-500 w-24">Confidence:</span>
+              <span className={`font-semibold ${mention.confidence >= 0.85 ? "text-amber-600" : "text-red-600"}`}>
                 {Math.round(mention.confidence * 100)}%
               </span>
             </div>
           </div>
 
-          {/* Store selector */}
+          {/* Store picker */}
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-slate-700">
-              Select the correct store
-            </label>
-            <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            >
-              <option value="">— choose a store —</option>
-              {mention.candidateStores.map((s) => (
-                <option key={s.storeNumber} value={s.storeNumber}>
-                  {s.storeNumber}
-                  {s.storeName && s.storeName !== s.storeNumber
-                    ? ` — ${s.storeName}`
-                    : ""}
-                </option>
-              ))}
-            </select>
+            <label className="text-sm font-semibold text-slate-700">Select the correct store</label>
+            {selectedStore && (
+              <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm">
+                <Check className="h-4 w-4 text-indigo-600" />
+                <span className="font-medium text-indigo-800">
+                  {selectedStore.storeNumber}
+                  {selectedStore.storeName !== selectedStore.storeNumber && ` — ${selectedStore.storeName}`}
+                </span>
+                <button
+                  className="ml-auto text-indigo-400 hover:text-indigo-600"
+                  onClick={() => { setSelectedStore(null); setStoreOpen(true); }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            {!selectedStore && (
+              <div className="relative">
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                  <Search className="h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by store number or name…"
+                    value={storeSearch}
+                    onChange={(e) => { setStoreSearch(e.target.value); setStoreOpen(true); }}
+                    onFocus={() => setStoreOpen(true)}
+                    className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  />
+                </div>
+                {storeOpen && filteredStores.length > 0 && (
+                  <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                    {filteredStores.map((s) => (
+                      <li key={s.storeNumber}>
+                        <button
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-indigo-50"
+                          onClick={() => {
+                            setSelectedStore(s);
+                            setStoreSearch(`${s.storeNumber} — ${s.storeName}`);
+                            setStoreOpen(false);
+                          }}
+                        >
+                          <span className="font-mono font-semibold text-slate-700">{s.storeNumber}</span>
+                          <span className="text-slate-500">{s.storeName}</span>
+                        </button>
+                      </li>
+                    ))}
+                    {filteredStores.length === 0 && (
+                      <li className="px-4 py-3 text-sm text-slate-400">No stores match your search.</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Style selector */}
+          {/* Style picker */}
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-slate-700">
-              Select the correct style
-            </label>
-            <select
-              value={selectedStyle}
-              onChange={(e) => setSelectedStyle(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            >
-              <option value="">— choose a style —</option>
-              {mention.candidateStyles.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <label className="text-sm font-semibold text-slate-700">Select the correct style</label>
+            {selectedStyle && (
+              <div className="flex items-start gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm">
+                <Check className="h-4 w-4 mt-0.5 text-indigo-600 shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium text-indigo-800">{styleLabel(selectedStyle)}</p>
+                  {styleCode(selectedStyle) && (
+                    <p className="text-xs text-indigo-500 font-mono">{styleCode(selectedStyle)}</p>
+                  )}
+                </div>
+                <button
+                  className="text-indigo-400 hover:text-indigo-600 shrink-0"
+                  onClick={() => { setSelectedStyle(null); setStyleOpen(true); }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            {!selectedStyle && (
+              <div className="relative">
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                  <Search className="h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by style name or code…"
+                    value={styleSearch}
+                    onChange={(e) => { setStyleSearch(e.target.value); setStyleOpen(true); }}
+                    onFocus={() => setStyleOpen(true)}
+                    className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  />
+                </div>
+                {styleOpen && filteredStyles.length > 0 && (
+                  <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                    {filteredStyles.map((s) => (
+                      <li key={s}>
+                        <button
+                          className="flex w-full flex-col px-4 py-2.5 text-left hover:bg-indigo-50"
+                          onClick={() => {
+                            setSelectedStyle(s);
+                            setStyleSearch(styleLabel(s));
+                            setStyleOpen(false);
+                          }}
+                        >
+                          <span className="text-sm font-medium text-slate-800">{styleLabel(s)}</span>
+                          {styleCode(s) && (
+                            <span className="text-xs font-mono text-slate-400">{styleCode(s)}</span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {styleOpen && filteredStyles.length === 0 && styleSearch.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg text-sm text-slate-400">
+                    No styles match — try a different search term.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -126,14 +216,14 @@ export function ValidationModal({
         <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
           <button
             onClick={onSkip}
-            className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
             Skip this mention
           </button>
           <button
             onClick={handleConfirm}
             disabled={!canConfirm}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
           >
             <Check className="h-4 w-4" />
             Confirm match

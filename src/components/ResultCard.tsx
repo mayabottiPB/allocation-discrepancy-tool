@@ -34,8 +34,13 @@ export function ResultCard({ result }: ResultCardProps) {
                 : ""}
             </p>
             <h3 className="mt-0.5 text-base font-bold text-slate-900">
-              {result.style}
+              {result.style.includes(" | ")
+                ? result.style.split(" | ").slice(1).join(" | ")
+                : result.style}
             </h3>
+            {result.style.includes(" | ") && (
+              <p className="text-xs font-mono text-slate-400">{result.style.split(" | ")[0]}</p>
+            )}
           </div>
         </div>
         <span
