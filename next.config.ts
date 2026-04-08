@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ["xlsx"],
-  },
+  serverExternalPackages: ["xlsx"],
 };
 
 export default nextConfig;
