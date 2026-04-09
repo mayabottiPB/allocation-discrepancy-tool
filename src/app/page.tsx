@@ -86,7 +86,7 @@ export default function Home() {
           totalInbound: agg.totalInbound,
           netSalesUnits: agg.netSalesUnits,
           eopOHATPUnits: agg.eopOHATPUnits,
-          status: agg.totalInbound === 0 && agg.netSalesUnits > 0 ? "action-required" : "no-action",
+          status: agg.totalInbound > 0 ? "no-action" : agg.netSalesUnits > 0 ? "action-send-stock" : "action-challenge",
         });
       }
       setResults(out);
@@ -196,7 +196,7 @@ export default function Home() {
                     totalInbound: agg.totalInbound,
                     netSalesUnits: agg.netSalesUnits,
                     eopOHATPUnits: agg.eopOHATPUnits,
-                    status: agg.totalInbound === 0 && agg.netSalesUnits > 0 ? "action-required" : "no-action",
+                    status: agg.totalInbound > 0 ? "no-action" : agg.netSalesUnits > 0 ? "action-send-stock" : "action-challenge",
                     refined: true,
                   }
                 : r
@@ -215,7 +215,9 @@ export default function Home() {
   // ─── Derived ────────────────────────────────────────────────────────────────
   const isAnalyzing = appState === "analyzing";
   const canAnalyze = rows.length > 0 && feedback.trim().length > 0 && !isAnalyzing;
-  const actionCount = results.filter((r) => r.status === "action-required").length;
+  const sendStockCount = results.filter((r) => r.status === "action-send-stock").length;
+  const challengeCount = results.filter((r) => r.status === "action-challenge").length;
+  const actionCount = sendStockCount + challengeCount;
   const okCount = results.filter((r) => r.status === "no-action").length;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -333,11 +335,13 @@ export default function Home() {
                 <p className="text-sm font-semibold text-slate-700">
                   Analysis complete — {results.length} item{results.length !== 1 ? "s" : ""} reviewed
                 </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {actionCount > 0 && (
-                    <span className="font-medium text-red-600">{actionCount} action required</span>
+                <p className="mt-0.5 text-xs text-slate-500 flex flex-wrap gap-x-2">
+                  {sendStockCount > 0 && (
+                    <span className="font-medium text-red-600">{sendStockCount} send stock</span>
                   )}
-                  {actionCount > 0 && okCount > 0 && " · "}
+                  {challengeCount > 0 && (
+                    <span className="font-medium text-amber-600">{challengeCount} challenge request</span>
+                  )}
                   {okCount > 0 && (
                     <span className="font-medium text-emerald-600">{okCount} no action needed</span>
                   )}

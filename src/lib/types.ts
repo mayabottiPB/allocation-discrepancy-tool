@@ -50,7 +50,12 @@ export interface AnalysisResult {
   totalInbound: number;
   netSalesUnits: number;
   eopOHATPUnits: number;
-  status: "no-action" | "action-required";
+  /**
+   * no-action          → Inbound > 0. Stock is on its way.
+   * action-send-stock  → Inbound = 0 AND Net Sales > 0. Store is selling but nothing coming — allocate more.
+   * action-challenge   → Inbound = 0 AND Net Sales = 0. Store is requesting stock they aren't selling — push back.
+   */
+  status: "no-action" | "action-send-stock" | "action-challenge";
   /** Set after user submits feedback and AI refines the result */
   refined?: boolean;
 }

@@ -3,6 +3,7 @@
 import {
   CheckCircle,
   AlertCircle,
+  HelpCircle,
   Package,
   TrendingUp,
   Warehouse,
@@ -24,8 +25,54 @@ interface ResultCardProps {
   feedbackPending?: boolean;
 }
 
+// ─── Visual config per status ────────────────────────────────────────────────
+const STATUS_CONFIG = {
+  "no-action": {
+    border: "border-emerald-200",
+    bg: "bg-emerald-50",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-700",
+    verdictBg: "bg-emerald-100",
+    verdictText: "text-emerald-800",
+    badgeLabel: "No Action Needed",
+    icon: <CheckCircle className="h-6 w-6 shrink-0 text-emerald-500" />,
+  },
+  "action-send-stock": {
+    border: "border-red-200",
+    bg: "bg-red-50",
+    badgeBg: "bg-red-100",
+    badgeText: "text-red-700",
+    verdictBg: "bg-red-100",
+    verdictText: "text-red-800",
+    badgeLabel: "Action Required — Send Stock",
+    icon: <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />,
+  },
+  "action-challenge": {
+    border: "border-amber-200",
+    bg: "bg-amber-50",
+    badgeBg: "bg-amber-100",
+    badgeText: "text-amber-700",
+    verdictBg: "bg-amber-100",
+    verdictText: "text-amber-800",
+    badgeLabel: "Action Required — Challenge Request",
+    icon: <HelpCircle className="h-6 w-6 shrink-0 text-amber-500" />,
+  },
+} as const;
+
 export function ResultCard({ result, onFeedback, feedbackPending }: ResultCardProps) {
-  const isActionRequired = result.status === "action-required";
+  const cfg = result.refined
+    ? {
+        border: "border-violet-200",
+        bg: "bg-violet-50",
+        badgeBg: "bg-violet-100",
+        badgeText: "text-violet-700",
+        verdictBg: "bg-violet-100",
+        verdictText: "text-violet-800",
+        badgeLabel: "AI Refined",
+        icon: <CheckCircle className="h-6 w-6 shrink-0 text-violet-500" />,
+      }
+    : STATUS_CONFIG[result.status];
+
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [wrongSkus, setWrongSkus] = useState<Set<string>>(new Set());
   const [correctSkus, setCorrectSkus] = useState<Set<string>>(new Set());
@@ -82,24 +129,12 @@ export function ResultCard({ result, onFeedback, feedbackPending }: ResultCardPr
   const hasFeedback = wrongSkus.size > 0 || correctSkus.size > 0 || note.trim().length > 0;
 
   return (
-    <div
-      className={`rounded-2xl border-2 shadow-sm transition ${
-        result.refined
-          ? "border-violet-200 bg-violet-50"
-          : isActionRequired
-          ? "border-red-200 bg-red-50"
-          : "border-emerald-200 bg-emerald-50"
-      }`}
-    >
+    <div className={`rounded-2xl border-2 shadow-sm transition ${cfg.border} ${cfg.bg}`}>
       <div className="p-5">
         {/* Card header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            {isActionRequired ? (
-              <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />
-            ) : (
-              <CheckCircle className="h-6 w-6 shrink-0 text-emerald-500" />
-            )}
+            {cfg.icon}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Store {result.storeNumber}
@@ -113,34 +148,21 @@ export function ResultCard({ result, onFeedback, feedbackPending }: ResultCardPr
               )}
             </div>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-bold ${
-                result.refined
-                  ? "bg-violet-100 text-violet-700"
-                  : isActionRequired
-                  ? "bg-red-100 text-red-700"
-                  : "bg-emerald-100 text-emerald-700"
-              }`}
-            >
-              {result.refined ? "AI Refined" : isActionRequired ? "Action Required" : "No Action Needed"}
-            </span>
-          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${cfg.badgeBg} ${cfg.badgeText}`}>
+            {cfg.badgeLabel}
+          </span>
         </div>
 
         {/* Verdict */}
-        <p
-          className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${
-            result.refined
-              ? "bg-violet-100 text-violet-800"
-              : isActionRequired
-              ? "bg-red-100 text-red-800"
-              : "bg-emerald-100 text-emerald-800"
-          }`}
-        >
-          {isActionRequired
-            ? `No inbound units are allocated to this store. With ${result.netSalesUnits.toLocaleString()} units sold, this location may stock out.`
-            : `${result.totalInbound.toLocaleString()} unit${result.totalInbound !== 1 ? "s" : ""} inbound — allocation is in place.`}
+        <p className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${cfg.verdictBg} ${cfg.verdictText}`}>
+          {result.status === "no-action" &&
+            `${result.totalInbound.toLocaleString()} unit${result.totalInbound !== 1 ? "s" : ""} inbound — allocation is in place.`}
+          {result.status === "action-send-stock" &&
+            `No inbound units are allocated to this store. With ${result.netSalesUnits.toLocaleString()} net sales unit${result.netSalesUnits !== 1 ? "s" : ""}, stock is needed — allocate replenishment now.`}
+          {result.status === "action-challenge" &&
+            `No inbound units and no recent sales. The store is requesting stock they are not selling. Push back with the store team before allocating.`}
+          {result.refined &&
+            ` (Result updated based on your feedback.)`}
         </p>
 
         {/* Metrics */}
@@ -150,6 +172,7 @@ export function ResultCard({ result, onFeedback, feedbackPending }: ResultCardPr
             label="Total Inbound"
             value={result.totalInbound.toLocaleString()}
             highlight={result.totalInbound === 0}
+            highlightColor={result.status === "action-challenge" ? "amber" : "red"}
           />
           <Metric
             icon={<TrendingUp className="h-4 w-4 text-violet-500" />}
@@ -294,21 +317,27 @@ function Metric({
   label,
   value,
   highlight,
+  highlightColor = "red",
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   highlight?: boolean;
+  highlightColor?: "red" | "amber";
 }) {
+  const highlightClass = highlight
+    ? highlightColor === "amber"
+      ? "text-amber-600"
+      : "text-red-600"
+    : "text-slate-900";
+
   return (
     <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-100">
       <div className="mb-1 flex items-center gap-1.5">
         {icon}
         <span className="text-xs font-medium text-slate-500">{label}</span>
       </div>
-      <p className={`text-lg font-bold ${highlight ? "text-red-600" : "text-slate-900"}`}>
-        {value}
-      </p>
+      <p className={`text-lg font-bold ${highlightClass}`}>{value}</p>
     </div>
   );
 }
