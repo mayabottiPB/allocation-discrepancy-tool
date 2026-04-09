@@ -360,7 +360,7 @@ export default function Home() {
 
             {[...results]
               .sort((a, b) =>
-                a.status === "action-required" ? -1 : b.status === "action-required" ? 1 : 0
+                a.status !== "no-action" ? -1 : b.status !== "no-action" ? 1 : 0
               )
               .map((r) => (
                 <ResultCard
