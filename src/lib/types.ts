@@ -1,6 +1,8 @@
 export interface AllocationRow {
   storeNumber: string;
   storeName: string;
+  storeType: string;     // e.g. "Outlet", "FP Stores", "eComm"
+  storeDistrict: string; // e.g. "North East", "West Coast"
   /** Style Description — human-readable, used for display and AI matching */
   style: string;
   /** Style Number — the code (e.g. B0U014CRPC), used as grouping key */
@@ -17,6 +19,8 @@ export interface ParsedSpreadsheet {
   rows: AllocationRow[];
   uniqueStores: Array<{ storeNumber: string; storeName: string }>;
   uniqueStyles: string[];
+  uniqueStoreTypes: string[];
+  uniqueDistricts: string[];
   columnWarnings: string[];
 }
 
@@ -25,12 +29,20 @@ export interface ExtractedMention {
   id: string;
   rawStoreRef: string;
   rawProductRef: string;
-  matchedStoreNumber: string | null;
+  /**
+   * "store"      → single store reference
+   * "district"   → an entire store district (e.g. "North East")
+   * "store-type" → an entire store type (e.g. "Outlets", "FP Stores")
+   */
+  scope: "store" | "district" | "store-type";
+  matchedStoreNumber: string | null;   // only set when scope === "store"
   matchedStoreName: string | null;
+  matchedGroup: string | null;         // district name or store type when scope !== "store"
   matchedStyle: string | null;
   confidence: number; // 0–1
   needsValidation: boolean;
   candidateStores: Array<{ storeNumber: string; storeName: string }>;
+  candidateGroups: string[];           // candidate districts or store types
   candidateStyles: string[];
 }
 
@@ -42,6 +54,8 @@ export interface AnalyzeResponse {
 
 /** Final result card after all validations resolved */
 export interface AnalysisResult {
+  /** When this result was fanned out from a district/store-type mention */
+  groupLabel?: string;
   id: string;
   storeNumber: string;
   storeName: string;

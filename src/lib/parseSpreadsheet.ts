@@ -102,6 +102,19 @@ export function parseSpreadsheet(buffer: ArrayBuffer): ParsedSpreadsheet {
     "style no",
   ]);
 
+  const storeTypeCol = findColumn(keys, [
+    "Store Type",
+    "store type",
+    "storetype",
+  ]);
+
+  const storeDistrictCol = findColumn(keys, [
+    "Store District",
+    "store district",
+    "district",
+    "region",
+  ]);
+
   const skuCol = findColumn(keys, [
     "CC",                // exact header in the Allocation report (colour-size code)
     "SKU",
@@ -154,8 +167,10 @@ export function parseSpreadsheet(buffer: ArrayBuffer): ParsedSpreadsheet {
     const style = styleDesc || styleNum;
 
     return {
-      storeNumber:          toString(storeNumberCol ? raw[storeNumberCol] : ""),
-      storeName:            toString(storeNameCol   ? raw[storeNameCol]   : ""),
+      storeNumber:          toString(storeNumberCol    ? raw[storeNumberCol]    : ""),
+      storeName:            toString(storeNameCol      ? raw[storeNameCol]      : ""),
+      storeType:            toString(storeTypeCol      ? raw[storeTypeCol]      : ""),
+      storeDistrict:        toString(storeDistrictCol  ? raw[storeDistrictCol]  : ""),
       style,
       styleNumber:          styleNum,
       sku:                  toString(skuCol ? raw[skuCol] : ""),
@@ -190,7 +205,49 @@ export function parseSpreadsheet(buffer: ArrayBuffer): ParsedSpreadsheet {
   }
   const uniqueStyles = Array.from(styleSet).sort();
 
-  return { rows, uniqueStores, uniqueStyles, columnWarnings: warnings };
+  // ── Unique store types & districts ──────────────────────────────────────────
+  const storeTypeSet = new Set<string>();
+  const districtSet = new Set<string>();
+  for (const row of rows) {
+    if (row.storeType) storeTypeSet.add(row.storeType);
+    if (row.storeDistrict) districtSet.add(row.storeDistrict);
+  }
+  const uniqueStoreTypes = Array.from(storeTypeSet).sort();
+  const uniqueDistricts  = Array.from(districtSet).sort();
+
+  return { rows, uniqueStores, uniqueStyles, uniqueStoreTypes, uniqueDistricts, columnWarnings: warnings };
+}
+
+/**
+ * Return all unique store numbers that belong to a given district.
+ */
+export function getStoresByDistrict(
+  rows: AllocationRow[],
+  district: string
+): Array<{ storeNumber: string; storeName: string }> {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.storeDistrict.toLowerCase() === district.toLowerCase() && row.storeNumber) {
+      if (!map.has(row.storeNumber)) map.set(row.storeNumber, row.storeName);
+    }
+  }
+  return Array.from(map.entries()).map(([storeNumber, storeName]) => ({ storeNumber, storeName }));
+}
+
+/**
+ * Return all unique store numbers that belong to a given store type.
+ */
+export function getStoresByType(
+  rows: AllocationRow[],
+  storeType: string
+): Array<{ storeNumber: string; storeName: string }> {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.storeType.toLowerCase() === storeType.toLowerCase() && row.storeNumber) {
+      if (!map.has(row.storeNumber)) map.set(row.storeNumber, row.storeName);
+    }
+  }
+  return Array.from(map.entries()).map(([storeNumber, storeName]) => ({ storeNumber, storeName }));
 }
 
 /**

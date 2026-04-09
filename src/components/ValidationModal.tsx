@@ -8,21 +8,35 @@ interface ValidationModalProps {
   mention: ExtractedMention;
   allStores: Array<{ storeNumber: string; storeName: string }>;
   allStyles: string[];
+  allGroups: string[]; // district names or store type names depending on scope
   onConfirm: (storeNumber: string, storeName: string, style: string) => void;
   onSkip: () => void;
 }
 
-export function ValidationModal({ mention, allStores, allStyles, onConfirm, onSkip }: ValidationModalProps) {
+export function ValidationModal({ mention, allStores, allStyles, allGroups, onConfirm, onSkip }: ValidationModalProps) {
   const [storeSearch, setStoreSearch] = useState(mention.rawStoreRef ?? "");
   const [styleSearch, setStyleSearch] = useState(mention.rawProductRef ?? "");
+  const isGroupScope = mention.scope === "district" || mention.scope === "store-type";
+
   const [selectedStore, setSelectedStore] = useState<{ storeNumber: string; storeName: string } | null>(
     mention.matchedStoreNumber
       ? { storeNumber: mention.matchedStoreNumber, storeName: mention.matchedStoreName ?? mention.matchedStoreNumber }
       : null
   );
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(mention.matchedGroup ?? null);
+  const [groupSearch, setGroupSearch] = useState(mention.matchedGroup ?? mention.rawStoreRef ?? "");
+  const [groupOpen, setGroupOpen] = useState(false);
+
   const [selectedStyle, setSelectedStyle] = useState<string | null>(mention.matchedStyle ?? null);
   const [storeOpen, setStoreOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
+
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.toLowerCase().trim();
+    const candidates = mention.candidateGroups?.length ? mention.candidateGroups : allGroups;
+    if (!q) return candidates;
+    return allGroups.filter((g) => g.toLowerCase().includes(q)).slice(0, 10);
+  }, [groupSearch, mention.candidateGroups, allGroups]);
 
   const filteredStores = useMemo(() => {
     const q = storeSearch.toLowerCase().trim();
@@ -46,11 +60,17 @@ export function ValidationModal({ mention, allStores, allStyles, onConfirm, onSk
       .slice(0, 20);
   }, [styleSearch, mention.candidateStyles, allStyles]);
 
-  const canConfirm = selectedStore !== null && selectedStyle !== null;
+  const canConfirm = isGroupScope
+    ? selectedGroup !== null && selectedStyle !== null
+    : selectedStore !== null && selectedStyle !== null;
 
   const handleConfirm = () => {
-    if (!selectedStore || !selectedStyle) return;
-    onConfirm(selectedStore.storeNumber, selectedStore.storeName, selectedStyle);
+    if (!selectedStyle) return;
+    if (isGroupScope && selectedGroup) {
+      onConfirm(selectedGroup, selectedGroup, selectedStyle);
+    } else if (selectedStore) {
+      onConfirm(selectedStore.storeNumber, selectedStore.storeName, selectedStyle);
+    }
   };
 
   /** Extract just the style description from "StyleNumber | StyleDescription" */
@@ -99,8 +119,54 @@ export function ValidationModal({ mention, allStores, allStyles, onConfirm, onSk
             </div>
           </div>
 
-          {/* Store picker */}
-          <div className="space-y-1.5">
+          {/* Group picker (district / store-type scope) */}
+          {isGroupScope && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">
+                Select the correct {mention.scope === "district" ? "district" : "store type"}
+              </label>
+              {selectedGroup ? (
+                <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm">
+                  <Check className="h-4 w-4 text-indigo-600" />
+                  <span className="font-medium text-indigo-800">{selectedGroup}</span>
+                  <button className="ml-auto text-indigo-400 hover:text-indigo-600" onClick={() => { setSelectedGroup(null); setGroupOpen(true); }}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                    <Search className="h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder={`Search ${mention.scope === "district" ? "districts" : "store types"}…`}
+                      value={groupSearch}
+                      onChange={(e) => { setGroupSearch(e.target.value); setGroupOpen(true); }}
+                      onFocus={() => setGroupOpen(true)}
+                      className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                    />
+                  </div>
+                  {groupOpen && filteredGroups.length > 0 && (
+                    <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                      {filteredGroups.map((g) => (
+                        <li key={g}>
+                          <button
+                            className="flex w-full px-4 py-2.5 text-left text-sm hover:bg-indigo-50 font-medium text-slate-800"
+                            onClick={() => { setSelectedGroup(g); setGroupSearch(g); setGroupOpen(false); }}
+                          >
+                            {g}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Store picker (store scope only) */}
+          {!isGroupScope && <div className="space-y-1.5">
             <label className="text-sm font-semibold text-slate-700">Select the correct store</label>
             {selectedStore && (
               <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm">
@@ -154,7 +220,7 @@ export function ValidationModal({ mention, allStores, allStyles, onConfirm, onSk
                 )}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Style picker */}
           <div className="space-y-1.5">
