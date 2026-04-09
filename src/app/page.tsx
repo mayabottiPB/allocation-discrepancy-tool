@@ -25,6 +25,37 @@ import type {
 
 type AppState = "idle" | "analyzing" | "validating" | "done" | "error";
 
+// ─── Module-level pure helpers ───────────────────────────────────────────────
+
+function computeStatus(totalInbound: number, netSalesUnits: number): AnalysisResult["status"] {
+  if (totalInbound > 0) return "no-action";
+  if (netSalesUnits > 0) return "action-send-stock";
+  return "action-challenge";
+}
+
+function makeResult(
+  rows: AllocationRow[],
+  id: string,
+  storeNumber: string,
+  storeName: string,
+  style: string,
+  groupLabel?: string
+): AnalysisResult {
+  const agg = aggregateResult(rows, storeNumber, style);
+  return {
+    id,
+    storeNumber,
+    storeName: storeName || agg.storeName,
+    style,
+    skusIncluded: agg.skusIncluded,
+    totalInbound: agg.totalInbound,
+    netSalesUnits: agg.netSalesUnits,
+    eopOHATPUnits: agg.eopOHATPUnits,
+    status: computeStatus(agg.totalInbound, agg.netSalesUnits),
+    groupLabel,
+  };
+}
+
 /** Group of results fanned out from a district/store-type mention */
 interface ResultGroupData {
   id: string;
@@ -56,36 +87,6 @@ export default function Home() {
   const [groups, setGroups] = useState<ResultGroupData[]>([]);
 
   const [refiningId, setRefiningId] = useState<string | null>(null);
-
-  // ─── Helpers ────────────────────────────────────────────────────────────────
-
-  function computeStatus(totalInbound: number, netSalesUnits: number): AnalysisResult["status"] {
-    if (totalInbound > 0) return "no-action";
-    if (netSalesUnits > 0) return "action-send-stock";
-    return "action-challenge";
-  }
-
-  function makeResult(
-    id: string,
-    storeNumber: string,
-    storeName: string,
-    style: string,
-    groupLabel?: string
-  ): AnalysisResult {
-    const agg = aggregateResult(rows, storeNumber, style);
-    return {
-      id,
-      storeNumber,
-      storeName: storeName || agg.storeName,
-      style,
-      skusIncluded: agg.skusIncluded,
-      totalInbound: agg.totalInbound,
-      netSalesUnits: agg.netSalesUnits,
-      eopOHATPUnits: agg.eopOHATPUnits,
-      status: computeStatus(agg.totalInbound, agg.netSalesUnits),
-      groupLabel,
-    };
-  }
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -129,11 +130,11 @@ export default function Home() {
         if (!m.matchedStyle) continue;
 
         if (m.scope === "store" && m.matchedStoreNumber) {
-          singleResults.push(makeResult(m.id, m.matchedStoreNumber, m.matchedStoreName ?? "", m.matchedStyle));
+          singleResults.push(makeResult(rows, m.id, m.matchedStoreNumber, m.matchedStoreName ?? "", m.matchedStyle));
         } else if (m.scope === "district" && m.matchedGroup) {
           const stores = getStoresByDistrict(rows, m.matchedGroup);
           const storeResults = stores.map((s, i) =>
-            makeResult(`${m.id}-${i}`, s.storeNumber, s.storeName, m.matchedStyle!, m.matchedGroup!)
+            makeResult(rows, `${m.id}-${i}`, s.storeNumber, s.storeName, m.matchedStyle!, m.matchedGroup!)
           );
           groupResults.push({
             id: m.id,
@@ -145,7 +146,7 @@ export default function Home() {
         } else if (m.scope === "store-type" && m.matchedGroup) {
           const stores = getStoresByType(rows, m.matchedGroup);
           const storeResults = stores.map((s, i) =>
-            makeResult(`${m.id}-${i}`, s.storeNumber, s.storeName, m.matchedStyle!, m.matchedGroup!)
+            makeResult(rows, `${m.id}-${i}`, s.storeNumber, s.storeName, m.matchedStyle!, m.matchedGroup!)
           );
           groupResults.push({
             id: m.id,
@@ -161,7 +162,6 @@ export default function Home() {
       setGroups(groupResults);
       setAppState("done");
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows]
   );
 
