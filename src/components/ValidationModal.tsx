@@ -6,11 +6,13 @@ import type { ExtractedMention } from "@/lib/types";
 
 interface ValidationModalProps {
   mention: ExtractedMention;
+  allStores: Array<{ storeNumber: string; storeName: string }>;
+  allStyles: string[];
   onConfirm: (storeNumber: string, storeName: string, style: string) => void;
   onSkip: () => void;
 }
 
-export function ValidationModal({ mention, onConfirm, onSkip }: ValidationModalProps) {
+export function ValidationModal({ mention, allStores, allStyles, onConfirm, onSkip }: ValidationModalProps) {
   const [storeSearch, setStoreSearch] = useState(mention.rawStoreRef ?? "");
   const [styleSearch, setStyleSearch] = useState(mention.rawProductRef ?? "");
   const [selectedStore, setSelectedStore] = useState<{ storeNumber: string; storeName: string } | null>(
@@ -23,20 +25,26 @@ export function ValidationModal({ mention, onConfirm, onSkip }: ValidationModalP
   const [styleOpen, setStyleOpen] = useState(false);
 
   const filteredStores = useMemo(() => {
-    const q = storeSearch.toLowerCase();
-    return mention.candidateStores.filter(
+    const q = storeSearch.toLowerCase().trim();
+    if (!q) return mention.candidateStores;
+    // Search ALL stores from the spreadsheet — not just AI candidates
+    return allStores.filter(
       (s) =>
         s.storeNumber.toLowerCase().includes(q) ||
         s.storeName.toLowerCase().includes(q)
-    );
-  }, [storeSearch, mention.candidateStores]);
+    ).slice(0, 10);
+  }, [storeSearch, mention.candidateStores, allStores]);
 
   const filteredStyles = useMemo(() => {
-    const q = styleSearch.toLowerCase();
-    return mention.candidateStyles.filter((s) =>
-      s.toLowerCase().includes(q)
-    );
-  }, [styleSearch, mention.candidateStyles]);
+    const q = styleSearch.toLowerCase().trim();
+    if (!q) return mention.candidateStyles;
+    // Search ALL styles from the spreadsheet — not just AI candidates
+    // Split query into words so "jacquard shirt" matches "JOSH JACQUARD SHIRT"
+    const words = q.split(/\s+/).filter(Boolean);
+    return allStyles
+      .filter((s) => words.every((w) => s.toLowerCase().includes(w)))
+      .slice(0, 20);
+  }, [styleSearch, mention.candidateStyles, allStyles]);
 
   const canConfirm = selectedStore !== null && selectedStyle !== null;
 

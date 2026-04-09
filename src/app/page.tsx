@@ -227,6 +227,8 @@ export default function Home() {
       {appState === "validating" && pendingMentions.length > 0 && (
         <ValidationModal
           mention={pendingMentions[0]}
+          allStores={uniqueStores}
+          allStyles={uniqueStyles}
           onConfirm={handleValidationConfirm}
           onSkip={handleValidationSkip}
         />
