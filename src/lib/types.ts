@@ -51,4 +51,26 @@ export interface AnalysisResult {
   netSalesUnits: number;
   eopOHATPUnits: number;
   status: "no-action" | "action-required";
+  /** Set after user submits feedback and AI refines the result */
+  refined?: boolean;
+}
+
+/** User feedback on a result card's SKU accuracy */
+export interface UserFeedback {
+  resultId: string;
+  storeNumber: string;
+  storeName: string;
+  originalStyle: string;
+  originalSkus: string[];
+  wrongSkus: string[];
+  correctSkus: string[];
+  note: string;
+}
+
+/** What the refine API returns */
+export interface RefineResponse {
+  correctedStyleNumber: string | null;
+  correctedStyleDescription: string | null;
+  explanation: string;
+  error?: string;
 }

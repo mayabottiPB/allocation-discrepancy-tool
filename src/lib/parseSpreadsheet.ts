@@ -195,7 +195,14 @@ export function parseSpreadsheet(buffer: ArrayBuffer): ParsedSpreadsheet {
 
 /**
  * Aggregate all CC/SKU rows for a given store + style.
- * Matches on style description OR style number.
+ *
+ * Matching priority (stops at first strategy that finds results):
+ *   1. Style number exact match  — most precise, used when style is "NUM | DESC" format
+ *   2. Full "NUM | DESC" pair exact match
+ *   3. Style description exact match  — case-insensitive, no substring tricks
+ *
+ * Deliberately avoids substring matching to prevent "DAX BORDER STRIPE KNIT POLO"
+ * (MENS) from being swept up when the user asked for "KIDS DAX BORDER STRIPE KNIT POLO".
  */
 export function aggregateResult(
   rows: AllocationRow[],
@@ -208,19 +215,37 @@ export function aggregateResult(
   skusIncluded: string[];
   storeName: string;
 } {
-  const styleLower = style.toLowerCase();
-  const matching = rows.filter(
-    (r) =>
-      r.storeNumber === storeNumber &&
-      (
-        r.style.toLowerCase() === styleLower ||
-        r.styleNumber.toLowerCase() === styleLower ||
-        // also match if the incoming style is a "Number | Description" pair
-        `${r.styleNumber} | ${r.style}`.toLowerCase() === styleLower ||
-        r.style.toLowerCase().includes(styleLower) ||
-        styleLower.includes(r.style.toLowerCase()) && r.style.length > 5
-      )
-  );
+  const storeRows = rows.filter((r) => r.storeNumber === storeNumber);
+
+  // Extract style number if the style is in "NUM | DESC" format
+  const pipeIdx = style.indexOf(" | ");
+  const extractedStyleNumber = pipeIdx !== -1 ? style.slice(0, pipeIdx).trim() : null;
+  const extractedStyleDesc   = pipeIdx !== -1 ? style.slice(pipeIdx + 3).trim() : style.trim();
+
+  let matching: AllocationRow[] = [];
+
+  // Strategy 1: match by exact style number (most reliable — avoids KIDS/MENS confusion)
+  if (extractedStyleNumber) {
+    matching = storeRows.filter(
+      (r) => r.styleNumber.toLowerCase() === extractedStyleNumber.toLowerCase()
+    );
+  }
+
+  // Strategy 2: match by full "NUM | DESC" pair
+  if (!matching.length) {
+    matching = storeRows.filter(
+      (r) =>
+        `${r.styleNumber} | ${r.style}`.toLowerCase() === style.toLowerCase()
+    );
+  }
+
+  // Strategy 3: exact description match (case-insensitive, no substring)
+  if (!matching.length) {
+    const descLower = extractedStyleDesc.toLowerCase();
+    matching = storeRows.filter(
+      (r) => r.style.toLowerCase() === descLower
+    );
+  }
 
   const totalInbound  = matching.reduce((s, r) => s + r.eopTotalUnitsInbound, 0);
   const netSalesUnits = matching.reduce((s, r) => s + r.netSalesUnits, 0);
@@ -229,4 +254,35 @@ export function aggregateResult(
   const storeName     = matching[0]?.storeName || storeNumber;
 
   return { totalInbound, netSalesUnits, eopOHATPUnits, skusIncluded, storeName };
+}
+
+/**
+ * Aggregate by a specific style number directly (used after user feedback correction).
+ */
+export function aggregateByStyleNumber(
+  rows: AllocationRow[],
+  storeNumber: string,
+  styleNumber: string
+): {
+  totalInbound: number;
+  netSalesUnits: number;
+  eopOHATPUnits: number;
+  skusIncluded: string[];
+  storeName: string;
+  styleDescription: string;
+} {
+  const matching = rows.filter(
+    (r) =>
+      r.storeNumber === storeNumber &&
+      r.styleNumber.toLowerCase() === styleNumber.toLowerCase()
+  );
+
+  const totalInbound    = matching.reduce((s, r) => s + r.eopTotalUnitsInbound, 0);
+  const netSalesUnits   = matching.reduce((s, r) => s + r.netSalesUnits, 0);
+  const eopOHATPUnits   = matching.reduce((s, r) => s + r.eopOHATPUnits, 0);
+  const skusIncluded    = [...new Set(matching.map((r) => r.sku).filter(Boolean))];
+  const storeName       = matching[0]?.storeName || storeNumber;
+  const styleDescription = matching[0]?.style || styleNumber;
+
+  return { totalInbound, netSalesUnits, eopOHATPUnits, skusIncluded, storeName, styleDescription };
 }

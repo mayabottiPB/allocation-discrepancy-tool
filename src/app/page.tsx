@@ -6,13 +6,15 @@ import { FileDropzone } from "@/components/FileDropzone";
 import { FeedbackInput } from "@/components/FeedbackInput";
 import { ValidationModal } from "@/components/ValidationModal";
 import { ResultCard } from "@/components/ResultCard";
-import { aggregateResult } from "@/lib/parseSpreadsheet";
+import { aggregateResult, aggregateByStyleNumber } from "@/lib/parseSpreadsheet";
 import type {
   AllocationRow,
   ParsedSpreadsheet,
   ExtractedMention,
   AnalysisResult,
   AnalyzeResponse,
+  UserFeedback,
+  RefineResponse,
 } from "@/lib/types";
 
 type AppState = "idle" | "analyzing" | "validating" | "done" | "error";
@@ -20,9 +22,7 @@ type AppState = "idle" | "analyzing" | "validating" | "done" | "error";
 export default function Home() {
   // Spreadsheet state
   const [rows, setRows] = useState<AllocationRow[]>([]);
-  const [uniqueStores, setUniqueStores] = useState<
-    Array<{ storeNumber: string; storeName: string }>
-  >([]);
+  const [uniqueStores, setUniqueStores] = useState<Array<{ storeNumber: string; storeName: string }>>([]);
   const [uniqueStyles, setUniqueStyles] = useState<string[]>([]);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -40,6 +40,7 @@ export default function Home() {
 
   // Results
   const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [refiningId, setRefiningId] = useState<string | null>(null);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -50,7 +51,6 @@ export default function Home() {
     setColumnWarnings(parsed.columnWarnings);
     setFileName(name);
   }, []);
-
 
   const handleClear = useCallback(() => {
     setRows([]);
@@ -86,9 +86,7 @@ export default function Home() {
           totalInbound: agg.totalInbound,
           netSalesUnits: agg.netSalesUnits,
           eopOHATPUnits: agg.eopOHATPUnits,
-          status: agg.totalInbound === 0 && agg.netSalesUnits > 0
-            ? "action-required"
-            : "no-action",
+          status: agg.totalInbound === 0 && agg.netSalesUnits > 0 ? "action-required" : "no-action",
         });
       }
       setResults(out);
@@ -98,8 +96,7 @@ export default function Home() {
   );
 
   const handleAnalyze = useCallback(async () => {
-    if (!rows.length) return;
-    if (!feedback.trim()) return;
+    if (!rows.length || !feedback.trim()) return;
 
     setAppState("analyzing");
     setErrorMsg(null);
@@ -120,11 +117,8 @@ export default function Home() {
         setAppState("error");
         return;
       }
-
       if (!data.mentions.length) {
-        setErrorMsg(
-          "No store or product references were found in the feedback. Try adding store numbers and style names."
-        );
+        setErrorMsg("No store or product references were found in the feedback.");
         setAppState("error");
         return;
       }
@@ -157,7 +151,6 @@ export default function Home() {
         needsValidation: false,
       };
       const newResolved = [...resolvedMentions, resolved];
-
       if (rest.length === 0) {
         buildResults(newResolved);
       } else {
@@ -168,7 +161,6 @@ export default function Home() {
     [pendingMentions, resolvedMentions, buildResults]
   );
 
-  // Validation modal skip
   const handleValidationSkip = useCallback(() => {
     const [, ...rest] = pendingMentions;
     if (rest.length === 0) {
@@ -178,16 +170,55 @@ export default function Home() {
     }
   }, [pendingMentions, resolvedMentions, buildResults]);
 
-  // ─── Derived ────────────────────────────────────────────────────────────────
+  // User submits feedback on a result card → call /api/refine → update that result
+  const handleFeedback = useCallback(
+    async (userFeedback: UserFeedback) => {
+      setRefiningId(userFeedback.resultId);
+      try {
+        const res = await fetch("/api/refine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ feedback: userFeedback, uniqueStyles }),
+        });
+        const data: RefineResponse = await res.json();
 
+        if (data.correctedStyleNumber) {
+          const agg = aggregateByStyleNumber(rows, userFeedback.storeNumber, data.correctedStyleNumber);
+          const correctedStyle = `${data.correctedStyleNumber} | ${agg.styleDescription}`;
+
+          setResults((prev) =>
+            prev.map((r) =>
+              r.id === userFeedback.resultId
+                ? {
+                    ...r,
+                    style: correctedStyle,
+                    skusIncluded: agg.skusIncluded,
+                    totalInbound: agg.totalInbound,
+                    netSalesUnits: agg.netSalesUnits,
+                    eopOHATPUnits: agg.eopOHATPUnits,
+                    status: agg.totalInbound === 0 && agg.netSalesUnits > 0 ? "action-required" : "no-action",
+                    refined: true,
+                  }
+                : r
+            )
+          );
+        }
+      } catch (e) {
+        console.error("Refine error:", e);
+      } finally {
+        setRefiningId(null);
+      }
+    },
+    [rows, uniqueStyles]
+  );
+
+  // ─── Derived ────────────────────────────────────────────────────────────────
   const isAnalyzing = appState === "analyzing";
-  const canAnalyze =
-    rows.length > 0 && feedback.trim().length > 0 && !isAnalyzing;
+  const canAnalyze = rows.length > 0 && feedback.trim().length > 0 && !isAnalyzing;
   const actionCount = results.filter((r) => r.status === "action-required").length;
   const okCount = results.filter((r) => r.status === "no-action").length;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       {/* Validation modal */}
@@ -207,9 +238,7 @@ export default function Home() {
               <Layers className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">
-                Allocation Discrepancy Tool
-              </h1>
+              <h1 className="text-lg font-bold text-slate-900">Allocation Discrepancy Tool</h1>
               <p className="text-xs text-slate-500">
                 Cross-reference field feedback against your allocation report
               </p>
@@ -229,7 +258,6 @@ export default function Home() {
         {/* Input panel */}
         {appState !== "done" && (
           <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            {/* Step 1 */}
             <div className="space-y-2">
               <SectionLabel number={1} label="Upload Allocation Report" />
               <FileDropzone
@@ -242,7 +270,7 @@ export default function Home() {
                 <div className="rounded-lg bg-amber-50 px-3 py-2">
                   {columnWarnings.map((w, i) => (
                     <p key={i} className="text-xs text-amber-700">
-                      ⚠ {w}
+                      {w.startsWith("Detected") ? `ℹ ${w}` : `⚠ ${w}`}
                     </p>
                   ))}
                 </div>
@@ -255,21 +283,15 @@ export default function Home() {
               )}
             </div>
 
-            <Divider />
+            <hr className="border-slate-100" />
 
-            {/* Step 2 */}
             <div className="space-y-2">
               <SectionLabel number={2} label="Paste Field Feedback" />
-              <FeedbackInput
-                value={feedback}
-                onChange={setFeedback}
-                disabled={isAnalyzing}
-              />
+              <FeedbackInput value={feedback} onChange={setFeedback} disabled={isAnalyzing} />
             </div>
 
-            <Divider />
+            <hr className="border-slate-100" />
 
-            {/* Step 3 */}
             <div className="space-y-2">
               <SectionLabel number={3} label="Run Analysis" />
               <button
@@ -290,13 +312,10 @@ export default function Home() {
                 )}
               </button>
               {!rows.length && (
-                <p className="text-center text-xs text-slate-400">
-                  Upload a spreadsheet first
-                </p>
+                <p className="text-center text-xs text-slate-400">Upload a spreadsheet first</p>
               )}
             </div>
 
-            {/* Error */}
             {appState === "error" && errorMsg && (
               <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
@@ -309,24 +328,18 @@ export default function Home() {
         {/* Results panel */}
         {appState === "done" && results.length > 0 && (
           <div className="space-y-5">
-            {/* Summary bar */}
             <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
               <div className="flex-1">
                 <p className="text-sm font-semibold text-slate-700">
-                  Analysis complete — {results.length} item
-                  {results.length !== 1 ? "s" : ""} reviewed
+                  Analysis complete — {results.length} item{results.length !== 1 ? "s" : ""} reviewed
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
                   {actionCount > 0 && (
-                    <span className="font-medium text-red-600">
-                      {actionCount} action required
-                    </span>
+                    <span className="font-medium text-red-600">{actionCount} action required</span>
                   )}
                   {actionCount > 0 && okCount > 0 && " · "}
                   {okCount > 0 && (
-                    <span className="font-medium text-emerald-600">
-                      {okCount} no action needed
-                    </span>
+                    <span className="font-medium text-emerald-600">{okCount} no action needed</span>
                   )}
                 </p>
               </div>
@@ -339,18 +352,21 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Action required first */}
-            {results
+            {[...results]
               .sort((a, b) =>
                 a.status === "action-required" ? -1 : b.status === "action-required" ? 1 : 0
               )
               .map((r) => (
-                <ResultCard key={r.id} result={r} />
+                <ResultCard
+                  key={r.id}
+                  result={r}
+                  onFeedback={handleFeedback}
+                  feedbackPending={refiningId === r.id}
+                />
               ))}
           </div>
         )}
 
-        {/* Footer */}
         <p className="mt-8 text-center text-xs text-slate-400">
           All data is processed in-memory and cleared on page refresh · Powered by Claude claude-opus-4-6
         </p>
@@ -358,8 +374,6 @@ export default function Home() {
     </div>
   );
 }
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function SectionLabel({ number, label }: { number: number; label: string }) {
   return (
@@ -371,8 +385,3 @@ function SectionLabel({ number, label }: { number: number; label: string }) {
     </div>
   );
 }
-
-function Divider() {
-  return <hr className="border-slate-100" />;
-}
-
